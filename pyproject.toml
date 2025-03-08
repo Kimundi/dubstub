@@ -4,6 +4,104 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "dubstub"
-description = "todo"
+description = "A simple \"dumb\" python type stub generator"
 readme = "README.md"
-version = "0.1"
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+requires-python = ">=3.10"
+version = "0.2.5"
+license = { file = "LICENSE" }
+keywords = ["PEP", "stubs", "type", "stubgen", "484"]
+dependencies = [
+    # for reading config files
+    "tomli==2.*; python_version < '3.11'",
+    # for displaying config files
+    "tomli-w==1.*",
+]
+
+[project.optional-dependencies]
+def_fmt = [
+    # formatting tools used by default profile
+    "black==25.*",
+    "isort==6.*",
+]
+eval = [
+    # tools needed for the eval command
+    "rich==13.*",
+    "pyright==1.1.*",
+    # "mypy==1.15.*",
+]
+dev = [
+    # formatting
+    "black==25.*",
+    "isort==6.*",
+    # type checking
+    "pyright==1.1.*",
+    # linting
+    "pylint==3.*",
+    # testing
+    "pytest==8.*",
+    # doc generation
+    "pycmarkgfm==1.*",
+    # multi python version testing
+    "uv==0.6.*",
+]
+
+[project.urls]
+Homepage = "https://github.com/Kimundi/dubstub"
+Documentation = "https://github.com/Kimundi/dubstub/blob/main/README.md"
+Repository = "https://github.com/Kimundi/dubstub"
+Changelog = "https://github.com/Kimundi/dubstub/blob/main/CHANGELOG.md"
+
+[project.scripts]
+dubstub = "dubstub.cli.main:main"
+
+[tool.black]
+line-length = 120
+fast = true
+target-version = ['py310']
+extend-exclude = ".*data_for_test.*"
+
+[tool.isort]
+profile = "black"
+extend_skip = ["data_for_test"]
+line_length = 120
+py_version = 310
+
+[tool.pylint.main]
+ignore-paths = ".*data_for_test.*"
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint."messages control"]
+disable = [
+    # I like TODOs
+    "fixme",
+    # handled by black
+    "format",
+    # we do not have generated API docs, so we do not need to be thorough here
+    "missing-module-docstring",
+    "missing-function-docstring",
+    "missing-class-docstring",
+    # reexport convention
+    "useless-import-alias",
+]
+
+[tool.pyright]
+include = ["src", "tests", "dev"]
+exclude = ["**/data_for_test", "**/node_modules", "**/__pycache__", "**/.cache"]
+pythonVersion = "3.10"
+pythonPlatform = "Linux"
+strict = ["**"]
+executionEnvironments = [{ root = "src" }, { root = "tests" }, { root = "dev" }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

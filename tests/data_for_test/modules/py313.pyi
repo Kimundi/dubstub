@@ -1,0 +1,13 @@
+type MyList[T = int] = list[T]
+type MyList[T = int] = list[T]
+def f1[T = int](x: T) -> None:
+    ...
+
+async def f2[T = int](x: T) -> None:
+    ...
+
+class Foo[T = int]:
+    ...
+
+class Bar[T = int]:
+    ...
