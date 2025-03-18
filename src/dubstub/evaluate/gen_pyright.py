@@ -98,8 +98,9 @@ def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
                 print(f"Clean {event.out_rel_pattern}")
                 remove(out)
 
-                print(f"Stub {event.inp_rel_pattern} -> {event.out_rel_pattern}")
-                generate_pyright(inp, out, inp.is_file(), config)
+                if inp.is_dir() or (inp.suffix in (".py", ".pyi")):
+                    print(f"Stub {event.inp_rel_pattern} -> {event.out_rel_pattern}")
+                    generate_pyright(inp, out, inp.is_file(), config)
             case Kind.COPY:
                 print(f"Copy {event.out_rel_pattern}")
                 generate_copy(inp, out)
