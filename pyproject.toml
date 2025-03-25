@@ -36,7 +36,7 @@ eval = [
     # tools needed for the eval command
     "rich==13.*",
     "pyright==1.1.*",
-    # "mypy==1.15.*",
+    "mypy==1.15.*",
 ]
 dev = [
     # formatting

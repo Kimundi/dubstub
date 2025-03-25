@@ -5,11 +5,12 @@ from typing import Callable
 
 from ..cli.common import add_common_options, parse_config_from_cli
 from ..config import Config
-from . import gen_dubstub, gen_pyright
+from . import gen_dubstub, gen_mypy, gen_pyright
 
 GENERATORS: dict[str, ModuleType] = {
     "dubstub": gen_dubstub,
     "pyright": gen_pyright,
+    "mypy": gen_mypy,
 }
 
 
@@ -20,7 +21,7 @@ def register_args(make_parser: Callable[..., ArgumentParser]):
     parser.add_argument("--output", type=Path, required=True, help="Output file or directory tree")
     parser.add_argument(
         "--type",
-        choices=["dubstub", "pyright", "all"],
+        choices=["dubstub", "pyright", "mypy", "all"],
         default="all",
         help="Which typestub generators to run. Their output will be placed side-by-side in the output directory.",
     )

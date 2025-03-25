@@ -45,16 +45,25 @@ def test_generator(name: str, module: ModuleType, tmp_path: Path, inp_sub_path: 
     out = tmp_path / Path(out_sub_path)
 
     # now call the actual generator
-    module.generate(inp, out, Config().validate())
+    module.generate(inp, out, Config(format=True).validate())
 
-    expected_dict, _ = tree_to_dict(expected)
-    out_dict, out_content = tree_to_dict(out)
+    expected_dict, expected_contents = tree_to_dict(expected)
+    out_dict, out_contents = tree_to_dict(out)
 
     if out_dict != expected_dict:
-        for file, content in out_content.items():
-            print(f"- {file} ------------------------")
-            print(content)
-            print("----------------------------------")
+        keys: set[str] = set()
+        keys.update(out_dict)
+        keys.update(expected_dict)
+        for key in sorted(keys):
+            if out_dict.get(key) != expected_dict.get(key):
+                out_content = out_contents.get(key, "")
+                expected_content = expected_contents.get(key, "")
+
+                print(f"- {key} - expected --------------")
+                print(expected_content)
+                print(f"- {key} - out -------------------")
+                print(out_content)
+                print("----------------------------------")
 
     assert out_dict == expected_dict, f"Output at {out} is unexpected"
 
