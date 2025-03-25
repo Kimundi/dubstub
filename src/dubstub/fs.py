@@ -38,7 +38,7 @@ def find_module_roots(path: Path) -> Iterable[Path]:
     """
 
     # the entire directory tree defines a module
-    if path.is_dir() and (path / "__init__.py").exists():
+    if path.is_dir() and ((path / "__init__.py").exists() or (path / "__init__.pyi").exists()):
         yield path
         return
 
