@@ -163,12 +163,17 @@ def cli_venv(extras: list[str], hidden_executables: list[str]):
     print(f"[Test CLI with extras {extras}]")
     venv_bin = dubstub_venv("3.10", extras)
     # hide all executables provided by extras
+    hidden_paths = hide_path(sorted(set(["dubstub", *hidden_executables])))
     env = {
-        "PATH": hide_path(hidden_executables),
+        "PATH": f"{venv_bin}:{hidden_paths}",
     }
 
+    found = shutil.which("dubstub", path=env["PATH"])
+    assert found is not None
+    assert Path(found) == venv_bin / "dubstub"
+
     def dubstub_cmd(*args: str | Path, **kwargs: Any):
-        cmd(venv_bin / "dubstub", *args, **kwargs, env=env)
+        cmd("dubstub", *args, **kwargs, env=env)
 
     yield dubstub_cmd
 
@@ -186,7 +191,7 @@ def check_cli():
     eval_ = ["eval", "--input", inp_path, "--output", out_path]
     diff_ = ["diff", "--eval", out_path]
 
-    with cli_venv([], ["pyright", "black", "isort"]) as dubstub:
+    with cli_venv([], ["pyright", "black", "isort", "stubgen"]) as dubstub:
         dubstub("--help")
         dubstub("gen", "--help")
         dubstub("eval", "--help")
@@ -202,7 +207,7 @@ def check_cli():
 
         dubstub(*diff_, expect_fail="The `eval` extra seems to not be installed")
 
-    with cli_venv(["def_fmt"], ["pyright"]) as dubstub:
+    with cli_venv(["def_fmt"], ["pyright", "stubgen"]) as dubstub:
         dubstub(*gen_, "--format=True")
         dubstub(*eval_, "--format=True", expect_fail="can be installed with `eval` extra")
 

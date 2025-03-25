@@ -20,6 +20,6 @@ def main():
 
     with (
         extra_guard("def_fmt", executables=["black", "isort"]),
-        extra_guard("eval", modules=["rich"], executables=["pyright"]),
+        extra_guard("eval", modules=["rich"], executables=["pyright", "stubgen"]),
     ):
         args.entrypoint(args)

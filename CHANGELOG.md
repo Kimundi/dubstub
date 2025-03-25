@@ -1,3 +1,7 @@
+# 1.1.1
+
+- Fix tests
+
 # 1.1.0
 
 - Added `mypy` stubgen support for the `eval` command

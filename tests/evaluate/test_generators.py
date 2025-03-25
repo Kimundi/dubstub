@@ -26,6 +26,22 @@ def tree_to_dict(path: Path) -> tuple[dict[str, str], dict[str, str]]:
     return file_hashes, file_contents
 
 
+def print_diff(expected_contents: dict[str, str], out_contents: dict[str, str]):
+    keys: set[str] = set()
+    keys.update(out_contents)
+    keys.update(expected_contents)
+    for key in sorted(keys):
+        if out_contents.get(key) != expected_contents.get(key):
+            out_content = out_contents.get(key, "")
+            expected_content = expected_contents.get(key, "")
+
+            print(f"- {key} - expected --------------")
+            print(expected_content)
+            print(f"- {key} - out -------------------")
+            print(out_content)
+            print("----------------------------------")
+
+
 @pytest.mark.parametrize(
     ("inp_sub_path", "out_sub_path"),
     [
@@ -50,20 +66,7 @@ def test_generator(name: str, module: ModuleType, tmp_path: Path, inp_sub_path: 
     expected_dict, expected_contents = tree_to_dict(expected)
     out_dict, out_contents = tree_to_dict(out)
 
-    if out_dict != expected_dict:
-        keys: set[str] = set()
-        keys.update(out_dict)
-        keys.update(expected_dict)
-        for key in sorted(keys):
-            if out_dict.get(key) != expected_dict.get(key):
-                out_content = out_contents.get(key, "")
-                expected_content = expected_contents.get(key, "")
-
-                print(f"- {key} - expected --------------")
-                print(expected_content)
-                print(f"- {key} - out -------------------")
-                print(out_content)
-                print("----------------------------------")
+    print_diff(expected_contents, out_contents)
 
     assert out_dict == expected_dict, f"Output at {out} is unexpected"
 
