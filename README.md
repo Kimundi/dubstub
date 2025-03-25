@@ -70,7 +70,7 @@ For details see `dubstub --help`. As a quick overview:
   ```
 - `dubstub eval` allows evaluating the typestub generation of multiple tools, by generating stubs with all of them. Example:
   ```sh
-  dubstub eval --input ./src --output ./out --format --profile pyright
+  dubstub eval --input ./src --output ./out --format True --profile pyright
   ```
 - `dubstub diff` can show the differences of the output of `dubstub eval` in a compact way. Example:
   ```sh
