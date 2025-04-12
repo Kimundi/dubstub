@@ -89,7 +89,8 @@ def evaluate_structure(expected: list[tuple[str, ...]], current: list[tuple[str,
         if ext not in expected:
             extra += 1
 
-    found_percent = float(found) / float(len(expected))
+    # NB: If we have zero paths, we just compute a value of 0.0
+    found_percent = float(found) / float(max(len(expected), 1))
 
     return (found_percent, extra)
 

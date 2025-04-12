@@ -120,11 +120,20 @@ def make_dir_entry(dst: Path, rel: str):
             ],
             ".",
         ),
+        (
+            [],
+            ".",
+            [],
+            ".",
+        ),
     ],
 )
 def test_find_output(tmp_path: Path, inp: list[str], arg: str, mypy_out: list[str], expected_found: str):
     inp_path = tmp_path / "inp"
     out_path = tmp_path / "out"
+
+    inp_path.mkdir()
+    out_path.mkdir()
 
     for single_inp in inp:
         make_dir_entry(inp_path, single_inp)
