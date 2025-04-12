@@ -20,6 +20,8 @@ def run_mypy(tmp: Path, dir_or_file: Path, out_dir: Path):
         [
             "stubgen",
             "--verbose",
+            # "--inspect-mode",
+            "--include-docstrings",
             "-o",
             str(out_dir),
             str(dir_or_file),
