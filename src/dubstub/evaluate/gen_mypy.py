@@ -50,11 +50,17 @@ def find_module_structure(path: Path) -> list[tuple[str, ...]]:
     modules: set[tuple[str, ...]] = set()
 
     for subpath in walk_dir(path):
-        if subpath.is_file() and subpath.suffix in (".py", ".pyi"):
-            if subpath.stem == "__init__":
-                modules.add(tuple([*subpath.parent.relative_to(path).parts]))
+        subpath_is_file = subpath.is_file()
+
+        if subpath_is_file and subpath.suffix in (".py", ".pyi"):
+            if subpath == path:
+                modules.add(tuple())
             else:
-                modules.add(tuple([*subpath.parent.relative_to(path).parts, subpath.stem]))
+                rel_parts = subpath.parent.relative_to(path).parts
+                if subpath.stem == "__init__":
+                    modules.add(tuple([*rel_parts]))
+                else:
+                    modules.add(tuple([*rel_parts, subpath.stem]))
 
     for found in modules.copy():
         while len(found) > 0:
@@ -155,6 +161,10 @@ def generate_mypy(inp: Path, out: Path, is_file: bool):
 
         # call mypy
         run_mypy(tmp, inp, tmp_out)
+
+        found_rel_path = find_matching_output(inp, tmp_out)
+
+        print(found_rel_path)
 
         if is_file and inp.suffix == ".py":
             out_name = inp.with_suffix(".pyi").name

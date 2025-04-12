@@ -66,7 +66,7 @@ def make_dir_entry(dst: Path, rel: str):
             ],
             "foo/bar",
             [
-                "foo/bar/baz.py",
+                "foo/bar/baz.pyi",
             ],
             "foo/bar",
         ),
@@ -76,7 +76,7 @@ def make_dir_entry(dst: Path, rel: str):
             ],
             "foo/bar/baz",
             [
-                "foo/bar/baz.py",
+                "foo/bar/baz.pyi",
             ],
             "foo/bar/baz",
         ),
@@ -86,9 +86,39 @@ def make_dir_entry(dst: Path, rel: str):
             ],
             "foo/bar/baz",
             [
-                "baz.py",
+                "baz.pyi",
             ],
             "baz",
+        ),
+        (
+            [
+                "foo/bar/baz.py",
+            ],
+            "foo/bar/baz.py",
+            [
+                "baz.pyi",
+            ],
+            "baz",
+        ),
+        (
+            [
+                "foo/bar/baz.py",
+            ],
+            "foo/bar/baz.py",
+            [
+                "baz/__init__.pyi",
+            ],
+            "baz",
+        ),
+        (
+            [
+                "foo/bar/baz.py",
+            ],
+            "foo/bar/baz.py",
+            [
+                "__init__.pyi",
+            ],
+            ".",
         ),
     ],
 )
