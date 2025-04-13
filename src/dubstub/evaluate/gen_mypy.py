@@ -1,6 +1,6 @@
 import subprocess
 from pathlib import Path
-from shutil import copy2, rmtree
+from shutil import copy2
 from tempfile import TemporaryDirectory
 
 from ..config import ValidatedConfig
@@ -35,21 +35,6 @@ def run_mypy(tmp: Path, dir_or_file: Path, out_dir: Path):
         cwd=cwd,
         check=True,
     )
-
-
-def find_mypy_out(inp: Path, out_name: str, mypy_out: Path) -> Path:
-    candidate_paths: list[Path] = []
-    candidate_path = Path(out_name)
-    for part in reversed(inp.parent.parts):
-        candidate_paths.append(candidate_path)
-        candidate_path = Path(part) / candidate_path
-    candidate_paths.reverse()
-
-    for candidate_path in candidate_paths:
-        if (mypy_out / candidate_path).exists():
-            return mypy_out / candidate_path
-
-    raise AssertionError("could not find expected files in mypy output")
 
 
 def find_module_structure(path: Path) -> list[tuple[str, ...]]:
@@ -162,7 +147,7 @@ def find_matching_output(mypy_inp_path: Path, mypy_out_path: Path) -> Path:
     return Path(*weighted[0][2])
 
 
-def generate_mypy(inp: Path, out: Path, is_file: bool, stub_out_paths: list[tuple[Path, Path]]):
+def generate_mypy(inp: Path, stub_out_paths: list[tuple[Path, Path]]):
     # otherwise we invoke pyright with the right base directory to do a src import from
     with TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -194,24 +179,10 @@ def generate_mypy(inp: Path, out: Path, is_file: bool, stub_out_paths: list[tupl
             ]
             for candidate in candidates:
                 print("candidate:", candidate, candidate.exists())
+                if candidate.exists():
+                    stub_out_path_abs.parent.mkdir(exist_ok=True, parents=True)
+                    candidate.rename(stub_out_path_abs)
         print()
-
-        if is_file and inp.suffix == ".py":
-            out_name = inp.with_suffix(".pyi").name
-        else:
-            out_name = inp.name
-
-        gen = find_mypy_out(inp, out_name, tmp_out)
-
-        if is_file:
-            # copy to output
-            out.parent.mkdir(parents=True, exist_ok=True)
-            gen.rename(out)
-        else:
-            # copy to output
-            out.parent.mkdir(parents=True, exist_ok=True)
-            rmtree(out, ignore_errors=True)
-            gen.rename(out)
 
 
 def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
@@ -261,7 +232,7 @@ def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
         # only call mypy if there is at least one file we need to have stubbed
         if stub_events and (not root.is_file or (root.inp_path.suffix in (".py", ".pyi"))):
             print(f"Stub {root.inp_rel_pattern} -> {root.out_rel_pattern}")
-            generate_mypy(root.inp_path, root.out_path, root.is_file, stub_out_paths)
+            generate_mypy(root.inp_path, stub_out_paths)
 
         # Files that can be kept as-is get copied directly afterwards. This
         # also ensures any mypy files get overridden
