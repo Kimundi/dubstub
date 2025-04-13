@@ -26,10 +26,6 @@ def run_mypy(tmp: Path, dir_or_file: Path, out_dir: Path):
         str(dir_or_file),
     ]
     cwd = tmp
-
-    print("mypy cmd:", cmd)
-    print("mypy cwd:", cwd)
-
     subprocess.run(
         cmd,
         cwd=cwd,
@@ -129,20 +125,10 @@ def find_matching_output(mypy_inp_path: Path, mypy_out_path: Path) -> Path:
     path. We expect that this is not the case for most real-life code, however.
     """
 
-    print(mypy_inp_path)
-    print(mypy_out_path)
-    subprocess.run(["tree", "-a", str(mypy_out_path)])
-
     expected = find_module_structure(mypy_inp_path)
     current = find_module_structure(mypy_out_path)
-
-    # print(expected)
-    # print(current)
     evaluated = evaluate_structures(expected, current, ())
-
     weighted = sorted(evaluated, key=lambda tup: (1.0 - tup[0], tup[1]))
-    # for x in weighted:
-    #    print(x)
 
     return Path(*weighted[0][2])
 
@@ -158,31 +144,23 @@ def generate_mypy(inp: Path, stub_out_paths: list[tuple[Path, Path]]):
         # call mypy
         run_mypy(tmp, inp, tmp_out)
 
-        # TODO: take walker Events output paths,
-        # and check them against the modules found at found_rel_path
-        # Then rewrite them to the expected output.
         found_rel_path = find_matching_output(inp, tmp_out)
-        print()
-        print("found_rel_path", found_rel_path)
         for stub_out_path_rel, stub_out_path_abs in stub_out_paths:
             mypy_out_src = tmp_out / found_rel_path / stub_out_path_rel
             if mypy_out_src.stem == "__init__":
                 mypy_out_src = mypy_out_src.parent
             else:
                 mypy_out_src = mypy_out_src.with_suffix("")
-            print("mypy_out_src: ", mypy_out_src)
-            print("-> out:", stub_out_path_abs)
             assert mypy_out_src.suffix == ""
             candidates = [
                 mypy_out_src.with_suffix(".pyi"),
                 mypy_out_src / "__init__.pyi",
             ]
             for candidate in candidates:
-                print("candidate:", candidate, candidate.exists())
                 if candidate.exists():
                     stub_out_path_abs.parent.mkdir(exist_ok=True, parents=True)
                     candidate.rename(stub_out_path_abs)
-        print()
+                    break
 
 
 def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
@@ -212,19 +190,9 @@ def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
                 copy_events.append(event)
 
     for root, stub_events, copy_events in roots:
-        print("DEBUG: root", root.inp_path)
-        print(f"  {root.out_path}")
-        for stub_event in stub_events:
-            print("DEBUG: stub", stub_event.inp_path)
-            print(f"  {stub_event.out_path}")
-            print(f"    {stub_event.out_path.relative_to(root.out_path)}")
-        for copy_event in copy_events:
-            print("DEBUG: copy", copy_event.inp_path)
-
         stub_out_paths: list[tuple[Path, Path]] = []
         for stub_event in stub_events:
             stub_out_paths.append((stub_event.out_path.relative_to(root.out_path), stub_event.out_path))
-        print("DEBUG: stub_out_paths", stub_out_paths)
 
         print(f"Clean {root.out_rel_pattern}")
         remove(root.out_path)
@@ -239,7 +207,5 @@ def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
         for event in copy_events:
             print(f"Copy {event.out_rel_pattern}")
             generate_copy(event.inp_path, event.out_path)
-
-        print()
 
     format_pyi_tree(walker, config)
