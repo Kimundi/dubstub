@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 
 from ..config import ValidatedConfig
 from ..format import format_pyi_tree
-from ..fs import Kind, Walker, remove, walk_dir
+from ..fs import Event, Kind, Walker, remove, walk_dir
 
 
 def generate_copy(inp: Path, out: Path):
@@ -16,17 +16,23 @@ def generate_copy(inp: Path, out: Path):
 
 
 def run_mypy(tmp: Path, dir_or_file: Path, out_dir: Path):
+    cmd = [
+        "stubgen",
+        "--verbose",
+        # "--inspect-mode",
+        "--include-docstrings",
+        "-o",
+        str(out_dir),
+        str(dir_or_file),
+    ]
+    cwd = tmp
+
+    print("mypy cmd:", cmd)
+    print("mypy cwd:", cwd)
+
     subprocess.run(
-        [
-            "stubgen",
-            "--verbose",
-            # "--inspect-mode",
-            "--include-docstrings",
-            "-o",
-            str(out_dir),
-            str(dir_or_file),
-        ],
-        cwd=tmp,
+        cmd,
+        cwd=cwd,
         check=True,
     )
 
@@ -138,6 +144,10 @@ def find_matching_output(mypy_inp_path: Path, mypy_out_path: Path) -> Path:
     path. We expect that this is not the case for most real-life code, however.
     """
 
+    print(mypy_inp_path)
+    print(mypy_out_path)
+    subprocess.run(["tree", "-a", str(mypy_out_path)])
+
     expected = find_module_structure(mypy_inp_path)
     current = find_module_structure(mypy_out_path)
 
@@ -152,7 +162,7 @@ def find_matching_output(mypy_inp_path: Path, mypy_out_path: Path) -> Path:
     return Path(*weighted[0][2])
 
 
-def generate_mypy(inp: Path, out: Path, is_file: bool):
+def generate_mypy(inp: Path, out: Path, is_file: bool, stub_out_paths: list[tuple[Path, Path]]):
     # otherwise we invoke pyright with the right base directory to do a src import from
     with TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -163,9 +173,28 @@ def generate_mypy(inp: Path, out: Path, is_file: bool):
         # call mypy
         run_mypy(tmp, inp, tmp_out)
 
+        # TODO: take walker Events output paths,
+        # and check them against the modules found at found_rel_path
+        # Then rewrite them to the expected output.
         found_rel_path = find_matching_output(inp, tmp_out)
-
-        print(found_rel_path)
+        print()
+        print("found_rel_path", found_rel_path)
+        for stub_out_path_rel, stub_out_path_abs in stub_out_paths:
+            mypy_out_src = tmp_out / found_rel_path / stub_out_path_rel
+            if mypy_out_src.stem == "__init__":
+                mypy_out_src = mypy_out_src.parent
+            else:
+                mypy_out_src = mypy_out_src.with_suffix("")
+            print("mypy_out_src: ", mypy_out_src)
+            print("-> out:", stub_out_path_abs)
+            assert mypy_out_src.suffix == ""
+            candidates = [
+                mypy_out_src.with_suffix(".pyi"),
+                mypy_out_src / "__init__.pyi",
+            ]
+            for candidate in candidates:
+                print("candidate:", candidate, candidate.exists())
+        print()
 
         if is_file and inp.suffix == ".py":
             out_name = inp.with_suffix(".pyi").name
@@ -190,22 +219,56 @@ def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
 
     walker = Walker(inp_root, out_root)
 
-    for event in walker.walk():
-        inp = event.inp_path
-        out = event.out_path
+    roots: list[tuple[Event, list[Event], list[Event]]] = []
 
+    for event in walker.walk():
         match event.kind:
             case Kind.ROOT:
-                print(f"Clean {event.out_rel_pattern}")
-                remove(out)
-
-                if inp.is_dir() or (inp.suffix in (".py", ".pyi")):
-                    print(f"Stub {event.inp_rel_pattern} -> {event.out_rel_pattern}")
-                    generate_mypy(inp, out, inp.is_file())
-            case Kind.COPY:
-                print(f"Copy {event.out_rel_pattern}")
-                generate_copy(inp, out)
+                roots.append((event, [], []))
             case Kind.STUB:
-                pass
+                root, stub_events, _ = roots[-1]
+                if root.is_file:
+                    assert event.inp_path == root.inp_path
+                else:
+                    assert root.inp_path in [event.inp_path, *event.inp_path.parents]
+                stub_events.append(event)
+            case Kind.COPY:
+                root, _, copy_events = roots[-1]
+                if root.is_file:
+                    assert event.inp_path == root.inp_path
+                else:
+                    assert root.inp_path in [event.inp_path, *event.inp_path.parents]
+                copy_events.append(event)
+
+    for root, stub_events, copy_events in roots:
+        print("DEBUG: root", root.inp_path)
+        print(f"  {root.out_path}")
+        for stub_event in stub_events:
+            print("DEBUG: stub", stub_event.inp_path)
+            print(f"  {stub_event.out_path}")
+            print(f"    {stub_event.out_path.relative_to(root.out_path)}")
+        for copy_event in copy_events:
+            print("DEBUG: copy", copy_event.inp_path)
+
+        stub_out_paths: list[tuple[Path, Path]] = []
+        for stub_event in stub_events:
+            stub_out_paths.append((stub_event.out_path.relative_to(root.out_path), stub_event.out_path))
+        print("DEBUG: stub_out_paths", stub_out_paths)
+
+        print(f"Clean {root.out_rel_pattern}")
+        remove(root.out_path)
+
+        # only call mypy if there is at least one file we need to have stubbed
+        if stub_events and (not root.is_file or (root.inp_path.suffix in (".py", ".pyi"))):
+            print(f"Stub {root.inp_rel_pattern} -> {root.out_rel_pattern}")
+            generate_mypy(root.inp_path, root.out_path, root.is_file, stub_out_paths)
+
+        # Files that can be kept as-is get copied directly afterwards. This
+        # also ensures any mypy files get overridden
+        for event in copy_events:
+            print(f"Copy {event.out_rel_pattern}")
+            generate_copy(event.inp_path, event.out_path)
+
+        print()
 
     format_pyi_tree(walker, config)
