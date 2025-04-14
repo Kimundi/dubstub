@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from dubstub.evaluate.gen_mypy import find_matching_output
+from dubstub.evaluate.gen_mypy import find_mypy_out_subdir
 
 INPUT1 = [
     # namespace package
@@ -144,5 +144,5 @@ def test_find_output(tmp_path: Path, inp: list[str], arg: str, mypy_out: list[st
     # subprocess.run(["tree", "-a", str(tmp_path)])
 
     arg_path = inp_path / arg
-    found = find_matching_output(arg_path, out_path)
+    found = find_mypy_out_subdir(arg_path, out_path)
     assert str(found) == expected_found

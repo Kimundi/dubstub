@@ -109,7 +109,7 @@ def evaluate_structures(
     return ret
 
 
-def find_matching_output(mypy_inp_path: Path, mypy_out_path: Path) -> Path:
+def find_mypy_out_subdir(mypy_inp_path: Path, mypy_out_path: Path) -> Path:
     """
     Given an input path to mypy, and the output directory that mypy wrote to,
     find the relative path in `mypy_out_path` that matches the directory nesting level
@@ -133,7 +133,9 @@ def find_matching_output(mypy_inp_path: Path, mypy_out_path: Path) -> Path:
     return Path(*weighted[0][2])
 
 
-def generate_mypy(inp: Path, stub_out_paths: list[tuple[Path, Path]]):
+def generate_mypy(root: Event, stub_events: list[Event]):
+    inp = root.inp_path
+
     # otherwise we invoke pyright with the right base directory to do a src import from
     with TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -144,29 +146,62 @@ def generate_mypy(inp: Path, stub_out_paths: list[tuple[Path, Path]]):
         # call mypy
         run_mypy(tmp, inp, tmp_out)
 
-        found_rel_path = find_matching_output(inp, tmp_out)
-        for stub_out_path_rel, stub_out_path_abs in stub_out_paths:
-            mypy_out_src = tmp_out / found_rel_path / stub_out_path_rel
-            if mypy_out_src.stem == "__init__":
-                mypy_out_src = mypy_out_src.parent
+        # Analyze mypy's output directory to figure out which of the files
+        # in there match the input and output paths from the stub events.
+        #
+        # This is needed because mypy will walk up the directory tree for
+        # its input until it finds something it identifies as the root of
+        # the module tree, and then it will output the stubbed files under this
+        # discovered directory path in the output directory.
+        #
+        # Additionally, mypy also will also not always match the kind of
+        # module file of the source (`<name>/__init__.pyi` vs `<name>.pyi`).
+        #
+        # For example, stubbing `foo/bar/baz.py` _should_ just generate `baz.pyi`,
+        # but can also end up generating `foo/bar/baz.pyi` or `foo/bar/baz/__init__.pyi`.
+        #
+        # We solve this issue heuristically in multiple phases:
+        # - First we identify which output paths should be generated relative
+        #   to the current root stubbing Event.
+        # - Then we heuristically try to figure out at which nesting level in the
+        #   mypy output directory we find the type stubs that match the same level
+        #   as the path argument passed to mypy.
+        # - Finally we combine the both, by looking at the stub files at the
+        #   right location in the mypy output, and moving them to the the
+        #   expected output paths.
+        root_relative_out_paths = get_root_relative_out_paths(root, stub_events)
+        mypy_out_subdir = find_mypy_out_subdir(inp, tmp_out)
+        for stub_out_root_relative, stub_out in root_relative_out_paths:
+            # Compute the expected path to the module, in form of a directory
+            # path whose last component contains the name of the module.
+            #
+            # This is used as a placeholder to then derive the two possible
+            # module file paths from it.
+            mypy_out_mod_path = tmp_out / mypy_out_subdir / stub_out_root_relative
+            if mypy_out_mod_path.stem == "__init__":
+                mypy_out_mod_path = mypy_out_mod_path.parent
             else:
-                mypy_out_src = mypy_out_src.with_suffix("")
-            assert mypy_out_src.suffix == ""
-            candidates = [
-                mypy_out_src.with_suffix(".pyi"),
-                mypy_out_src / "__init__.pyi",
-            ]
-            for candidate in candidates:
+                mypy_out_mod_path = mypy_out_mod_path.with_suffix("")
+            assert mypy_out_mod_path.suffix == ""
+
+            # NB: Mypy might generate either `<name>/__init__.pyi` or `<name>.pyi`,
+            # so we check both variants
+            mod_file_candidates = (
+                mypy_out_mod_path.with_suffix(".pyi"),
+                mypy_out_mod_path / "__init__.pyi",
+            )
+            for candidate in mod_file_candidates:
                 if candidate.exists():
-                    stub_out_path_abs.parent.mkdir(exist_ok=True, parents=True)
-                    candidate.rename(stub_out_path_abs)
+                    stub_out.parent.mkdir(exist_ok=True, parents=True)
+                    candidate.rename(stub_out)
                     break
 
 
-def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
-    # pylint: disable=duplicate-code
-
-    walker = Walker(inp_root, out_root)
+def group_per_root(walker: Walker) -> list[tuple[Event, list[Event], list[Event]]]:
+    """
+    Group up Walker Events, such that each ROOT event is matched with
+    all its child STUB and COPY events.
+    """
 
     roots: list[tuple[Event, list[Event], list[Event]]] = []
 
@@ -189,21 +224,34 @@ def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
                     assert root.inp_path in [event.inp_path, *event.inp_path.parents]
                 copy_events.append(event)
 
-    for root, stub_events, copy_events in roots:
-        stub_out_paths: list[tuple[Path, Path]] = []
-        for stub_event in stub_events:
-            stub_out_paths.append((stub_event.out_path.relative_to(root.out_path), stub_event.out_path))
+    return roots
 
+
+def get_root_relative_out_paths(root: Event, stub_events: list[Event]) -> list[tuple[Path, Path]]:
+    """Returns a list of tuples that contain the path of a stub file both relative to its root, and absolute"""
+
+    stub_out_paths: list[tuple[Path, Path]] = []
+    for stub_event in stub_events:
+        stub_out_paths.append((stub_event.out_path.relative_to(root.out_path), stub_event.out_path))
+
+    return stub_out_paths
+
+
+def generate(inp_root: Path, out_root: Path, config: ValidatedConfig):
+    walker = Walker(inp_root, out_root)
+    roots = group_per_root(walker)
+    for root, stub_events, copy_events in roots:
         print(f"Clean {root.out_rel_pattern}")
         remove(root.out_path)
 
         # only call mypy if there is at least one file we need to have stubbed
         if stub_events and (not root.is_file or (root.inp_path.suffix in (".py", ".pyi"))):
             print(f"Stub {root.inp_rel_pattern} -> {root.out_rel_pattern}")
-            generate_mypy(root.inp_path, stub_out_paths)
+            generate_mypy(root, stub_events)
 
         # Files that can be kept as-is get copied directly afterwards. This
-        # also ensures any mypy files get overridden
+        # also ensures any .pyi files mypy might have copied over will be ignored
+        # in favour of their original content.
         for event in copy_events:
             print(f"Copy {event.out_rel_pattern}")
             generate_copy(event.inp_path, event.out_path)
