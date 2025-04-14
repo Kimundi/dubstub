@@ -38,7 +38,7 @@ def find_module_roots(path: Path) -> Iterable[Path]:
     """
 
     # the entire directory tree defines a module
-    if path.is_dir() and (path / "__init__.py").exists():
+    if path.is_dir() and ((path / "__init__.py").exists() or (path / "__init__.pyi").exists()):
         yield path
         return
 
@@ -70,6 +70,7 @@ class Event:
     out_rel_pattern: str
 
     kind: Kind
+    is_file: bool
 
 
 # pylint: disable-next=too-few-public-methods
@@ -148,6 +149,7 @@ class Walker:
                 inp_rel_pattern=inp_rel_pattern,
                 out_rel_pattern=out_rel_pattern,
                 kind=kind,
+                is_file=not inp_path.is_dir(),  # NB: This also treats special files as files
             )
 
     def _walk(self) -> Iterable[Event]:
@@ -164,6 +166,7 @@ class Walker:
                 inp_rel_pattern=inp_rel_pattern,
                 out_rel_pattern=out_rel_pattern,
                 kind=Kind.ROOT,
+                is_file=not inp_path.is_dir(),  # NB: This also treats special files as files
             )
             yield from self._walk_module_root(inp_path)
 
