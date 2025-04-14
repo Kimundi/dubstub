@@ -34,7 +34,7 @@ def_fmt = [
 ]
 eval = [
     # tools needed for the eval command
-    "rich==13.*",
+    "rich==14.*",
     "pyright==1.1.*",
     "mypy==1.15.*",
 ]
