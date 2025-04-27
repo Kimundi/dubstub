@@ -270,6 +270,14 @@ from Y import *       # considered used (always)
 </td>
 </tr>
 <tr>
+<td><p><code>add_class_attributes_from_init</code></p>
+<p>type: <code>Pattern</code></p>
+</td>
+<td><p>Whether to class attribute type annotations from <code>self.&lt;name&gt;: T</code> annotations
+in <code>__init__()</code> methods.</p>
+</td>
+</tr>
+<tr>
 <td><p><code>format</code></p>
 <p>type: <code>Pattern</code></p>
 </td>
@@ -389,6 +397,7 @@ the official recommendations:
 - We add a `-> None` return type on functions that should have them.
 - `if` statements are kept, but `TYPE_CHECKING` guards are merged into the surrounding scope.
 - Variable values are kept if they define types according to the `typing` module.
+- Class attributes are also looked for in `__init__()` method assignments.
 - Unused imports are remove.
 - Autoformatting is disabled, but will use isort and black with default settings if enabled.
 
@@ -419,6 +428,7 @@ keep_variable_value = """
     or (parent_node_is('class') and name_is('__model__'))
 """
 keep_unused_imports = false
+add_class_attributes_from_init = true
 format = false
 
 [[tool.dubstub.formatter_cmds]]

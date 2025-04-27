@@ -1179,3 +1179,57 @@ def test_config_formatter_cmds(config: Config, expected: str):
 )
 def test_config_python_version(config: Config, expected: tuple[int, int]):
     assert config.validate().get_python_version() == expected
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        pytest.param(
+            Config(add_class_attributes_from_init=True),
+            """
+            class Foo:
+                bar: int
+                def __init__(self) -> None:
+                    ...
+
+            class Bar:
+                bar: str
+                foo: str
+                def __init__(self) -> None:
+                    ...
+            """,
+            id="yes",
+        ),
+        pytest.param(
+            Config(add_class_attributes_from_init=False),
+            """
+            class Foo:
+                def __init__(self) -> None:
+                    ...
+
+            class Bar:
+                bar: str
+                def __init__(self) -> None:
+                    ...
+            """,
+            id="no",
+        ),
+    ],
+)
+def test_config_add_class_attributes_from_init(config: Config, expected: str):
+    config_helper(
+        config,
+        """
+        class Foo:
+            def __init__(self):
+                self.foo = 1
+                self.bar: int = 2
+
+        class Bar:
+            bar: str
+            def __init__(self):
+                self.foo: str = ""
+                self.bar: int = 2
+        """,
+        expected,
+    )

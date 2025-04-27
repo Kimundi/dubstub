@@ -39,6 +39,11 @@ class Node:
     Tags to identify this node
     """
 
+    meta: dict[str, Any] = field(default_factory=dict)
+    """
+    Extra metadata specific to the type of node
+    """
+
     def add_child(self, *tags: Tag) -> "Node":
         node = Node(tags=set(tags))
         self.children.append(node)
@@ -280,6 +285,7 @@ class Stubber:
 
         # node for this assignment
         this = Node(tags=tags)
+        this.meta["name"] = name
 
         # annotation
         annotation_fragment = ""
@@ -427,6 +433,15 @@ class Stubber:
         if body and self.as_string_constant(body[0]) is not None:
             self.stub(this, body[0])
 
+        # check if we have assignment statements, and inject them into
+        # the surrounding class
+        if (
+            Tag.CLASS in parent.tags
+            and name == "__init__"
+            and self.is_match(self.config.add_class_attributes_from_init, parent, tags)
+        ):
+            self.check_add_class_attributes(parent, body)
+
         # make sure we have dots if there is nothing else
         self.check_body_ellipsis(parent, this, name=name)
 
@@ -533,6 +548,37 @@ class Stubber:
             this.add_child(Tag.ELLIPSIS).add_line("...")
         elif self.is_match(self.config.add_redundant_ellipsis, parent, this.tags, children=this.children, name=name):
             this.add_child(Tag.ELLIPSIS).add_line("...")
+
+    def check_add_class_attributes(self, parent: Node, body: list[ast.stmt]):
+        for body_stmt in body:
+            if not isinstance(body_stmt, ast.AnnAssign):
+                continue
+            if not isinstance(body_stmt.target, ast.Attribute):
+                continue
+
+            target_value = body_stmt.target.value
+            if not isinstance(target_value, ast.Name):
+                continue
+
+            if target_value.id != "self":
+                continue
+
+            attr = body_stmt.target.attr
+            annot = self.unparse_type_expr(body_stmt.annotation)
+
+            insert_pos = 0
+            already_inserted = False
+            for parent_child_idx, parent_child in enumerate(parent.children):
+                if Tag.VARIABLE in parent_child.tags:
+                    insert_pos = parent_child_idx + 1
+                    if parent_child.meta["name"] == attr:
+                        already_inserted = True
+
+            if not already_inserted:
+                child_node = Node(tags={Tag.VARIABLE, Tag.ANNOTATED})
+                child_node.add_line(f"{attr}: {annot}")
+                child_node.meta["name"] = str(attr)
+                parent.children.insert(insert_pos, child_node)
 
     def log_stub_ignore(self, obj: ast.AST):
         self.logger.ignore_intentional(f"{type(obj).__name__} statement")

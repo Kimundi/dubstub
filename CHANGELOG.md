@@ -1,3 +1,7 @@
+# 1.3
+
+- Add: Added class attribute extraction from `__init__()` methods.
+
 # 1.2
 
 - Add: Added `--filter` argument for `dubstub diff`.

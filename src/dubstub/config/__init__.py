@@ -223,6 +223,15 @@ class Config:
         """,
     ] = None
 
+    add_class_attributes_from_init: Annotated[
+        str | bool | None,
+        Pattern,
+        """
+        Whether to class attribute type annotations from `self.<name>: T` annotations
+        in `__init__()` methods.
+        """,
+    ] = None
+
     format: Annotated[
         str | bool | None,
         Pattern,
@@ -459,6 +468,7 @@ PROFILES: dict[str, Profile] = {
                 or (parent_node_is('class') and name_is('__model__'))
             """,
             keep_unused_imports=False,
+            add_class_attributes_from_init=True,
             format=False,
             formatter_cmds=[
                 FormatterCmd(
@@ -503,6 +513,7 @@ PROFILES: dict[str, Profile] = {
         - We add a `-> None` return type on functions that should have them.
         - `if` statements are kept, but `TYPE_CHECKING` guards are merged into the surrounding scope.
         - Variable values are kept if they define types according to the `typing` module.
+        - Class attributes are also looked for in `__init__()` method assignments.
         - Unused imports are remove.
         - Autoformatting is disabled, but will use isort and black with default settings if enabled.
         """,
