@@ -1,3 +1,11 @@
+# 1.2
+
+- Add: Added `--filter` argument for `dubstub diff`.
+
+# 1.1.1
+
+- Minor fixes
+
 # 1.1.1
 
 - Fix tests

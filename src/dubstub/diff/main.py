@@ -42,6 +42,12 @@ def register_args(make_parser: Callable[..., ArgumentParser]):
             Do not show diff if one of the files is entirely missing
         """,
     )
+    parser.add_argument(
+        "--filter",
+        help="""
+            Regular expression filter for the files that should be diffed
+        """,
+    )
     parser.set_defaults(entrypoint=main)
 
 
@@ -54,4 +60,5 @@ def main(args: Namespace):
         right=args.right,
         width=args.width,
         hide_missing=args.hide_missing,
+        filter_re=args.filter,
     )

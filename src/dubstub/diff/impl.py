@@ -1,3 +1,4 @@
+import re
 from difflib import Differ
 from pathlib import Path
 from typing import Iterable
@@ -15,13 +16,14 @@ def walk_rel_stub_files(root: Path) -> Iterable[Path]:
             yield path.relative_to(root)
 
 
-# pylint: disable=too-many-locals,too-many-branches,too-many-statements
+# pylint: disable-next=too-many-locals,too-many-branches,too-many-statements,too-many-arguments,too-many-positional-arguments
 def run(
     eval_path: Path,
     left: str,
     right: str,
     width: int,
     hide_missing: bool,
+    filter_re: str | None,
 ):
     a_path = eval_path / left
     b_path = eval_path / right
@@ -31,6 +33,9 @@ def run(
     paths.update(walk_rel_stub_files(b_path))
 
     for path in sorted(paths):
+        if filter_re is not None and not re.match(filter_re, str(path)):
+            continue
+
         a_file = a_path / path
         b_file = b_path / path
 
