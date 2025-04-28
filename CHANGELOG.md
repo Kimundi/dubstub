@@ -1,3 +1,8 @@
+# 1.4.1
+
+- Rewrite handling of attributes that have been extracted from `__init__` methods.
+  They are now subject to the same transformations as normal attributes.
+
 # 1.4
 
 - Rewrite heuristic for discovering (un)used names in a module to handle more than just imports
