@@ -83,10 +83,10 @@ class Logger:
 class Stubber:
     source: Source
     config: ValidatedConfig
-    used_names: set[str] | None
+    used_names: set[str]
     logger: Logger
 
-    def __init__(self, source: Source, config: ValidatedConfig, used_names: set[str] | None = None):
+    def __init__(self, source: Source, config: ValidatedConfig, used_names: set[str]):
         self.source = source
         self.config = config
         self.used_names = used_names
@@ -225,7 +225,7 @@ class Stubber:
         tags = {Tag.IMPORT}
 
         keep_unused_import = self.is_match(self.config.keep_unused_imports, parent, tags)
-        if not keep_unused_import and self.used_names is not None:
+        if not keep_unused_import:
             used_names = self.used_names
 
             new_names: list[ast.alias] = []
@@ -329,7 +329,7 @@ class Stubber:
             annotation=annotation_pattern,
             value=value_pattern,
         )
-        if not keep_definitions:
+        if not keep_definitions and name not in self.used_names:
             self.logger.ignore_disabled(f"Pruning variable {name}")
             return
 
@@ -344,7 +344,8 @@ class Stubber:
         decorator_list = obj.decorator_list
         tags = {Tag.CLASS}
 
-        if not self.is_match(self.config.keep_definitions, parent, tags, name=name):
+        keep_definitions = self.is_match(self.config.keep_definitions, parent, tags, name=name)
+        if not keep_definitions and name not in self.used_names:
             self.logger.ignore_disabled(f"Pruning class {name}")
             return
 
@@ -430,7 +431,7 @@ class Stubber:
         this.add_line(signature)
 
         # check if we have a doc string in the body to keep
-        if body and self.as_string_constant(body[0]) is not None:
+        if body and _as_string_constant(body[0]) is not None:
             self.stub(this, body[0])
 
         # check if we have assignment statements, and inject them into
@@ -450,7 +451,7 @@ class Stubber:
 
     def stub_expr(self, parent: Node, obj: ast.Expr):
         match obj.value:
-            case ast.Constant() if self.as_string_constant(obj.value) is not None:
+            case ast.Constant() if _as_string_constant(obj.value) is not None:
                 keep_docstring = False
 
                 if not parent.children:
@@ -585,13 +586,6 @@ class Stubber:
     def log_stub_ignore(self, obj: ast.AST):
         self.logger.ignore_intentional(f"{type(obj).__name__} statement")
 
-    def as_string_constant(self, obj: ast.AST) -> str | None:
-        if isinstance(obj, ast.Expr):
-            obj = obj.value
-        if isinstance(obj, ast.Constant) and isinstance(obj.value, str):
-            return obj.value
-        return None
-
     def unparse(self, obj: ast.AST) -> str:
         return self.source.unparse(obj)
 
@@ -604,57 +598,14 @@ class Stubber:
         Mostly this means identify string literals and replacing them with their content.
         """
 
-        match expr:
-            case ast.Subscript(value, slc, ast.Load()):
-                prefix = self.unparse(value)
-                if prefix == "Literal":
-                    return self.source.unparse_original_source(expr)
-
-                if isinstance(slc, ast.Tuple):
-                    args = slc.elts
-                else:
-                    args = [slc]
-
-                slc_unparsed_parts: list[str] = []
-                for i, arg in enumerate(args):
-                    if i > 0 and prefix == "Annotated":
-                        slc_unparsed_parts.append(self.unparse(arg))
-                    else:
-                        slc_unparsed_parts.append(self.unparse_type_expr(arg))
-
-                slc_unparsed = ", ".join(slc_unparsed_parts)
-                return f"{prefix}[{slc_unparsed}]"
-            case ast.Tuple(elts, ast.Load()):
-                return "(" + ", ".join(self.unparse_type_expr(elt) for elt in elts) + ")"
-            case ast.List(elts, ast.Load()):
-                return "[" + ", ".join(self.unparse_type_expr(elt) for elt in elts) + "]"
-            case ast.BinOp(left, ast.BitOr(), right):
-                return self.unparse_type_expr(left) + " | " + self.unparse_type_expr(right)
-            case ast.Constant(value) if isinstance(value, str):
-                # check if we can parse the string as expression,
-                # then return the unparsed expression
-                try:
-                    return self.unparse(self.source.parse_expr(value))
-                except SyntaxError:
-                    return self.unparse(expr)
-            case _:
-                # return unchanged
-                return self.unparse(expr)
+        return _unparse_type_expr(self.source, expr)
 
     def unparse_assign_target(
         self,
         targets: list[ast.expr] | ast.Name | ast.Attribute | ast.Subscript,
         simple: int | None,
     ) -> str:
-        # target(s)
-        if isinstance(targets, list):
-            targets_unparsed = " = ".join([self.unparse(target) for target in targets])
-        else:
-            targets_unparsed = self.unparse(targets)
-            if simple is not None and not simple:
-                targets_unparsed = f"({targets_unparsed})"
-
-        return targets_unparsed
+        return _unparse_assign_target(self.source, targets, simple)
 
     def unparse_arg(self, arg: ast.arg, val: None | ast.expr, keep_val: bool = False) -> str:
         if arg.type_comment:
@@ -764,66 +715,6 @@ class Stubber:
                     generics = f"[{', '.join(type_params_unparsed)}]"
             return generics
 
-    def _get_or_init_used_names(self) -> set[str]:
-        if self.used_names is None:
-            self.used_names = set()
-        return self.used_names
-
-    def discover_module_names(self, module: ast.Module):
-        # discover all surviving names not brought into scope by imports
-        for obj in module.body:
-            match obj:
-                case ast.Import() | ast.ImportFrom():
-                    pass
-                case ast.Assign() | ast.AnnAssign():
-                    self.discover_any_names(obj)
-                    self.discover_special_assign_names(obj)
-                case _:
-                    self.discover_any_names(obj)
-
-    def discover_any_names(self, obj: ast.AST):
-        names = self._get_or_init_used_names()
-
-        for node in ast.walk(obj):
-            if isinstance(node, ast.Name):
-                names.add(node.id)
-
-    def discover_special_assign_names(self, obj: ast.Assign | ast.AnnAssign):
-        names = self._get_or_init_used_names()
-        targets: list[ast.expr] | ast.Name | ast.Attribute | ast.Subscript
-        value: ast.expr | None
-        simple: int | None
-        annotation: ast.expr | None
-
-        # normalize both cases into one
-        match obj:
-            case ast.Assign(targets, value, _):
-                simple = None
-                annotation = None
-            case ast.AnnAssign(target, annotation, value, simple):
-                targets = target
-
-        # check if we need to analyze the assignment value as a type
-        if annotation is not None and value is not None:
-            unparsed_annotation = self.unparse(annotation)
-            if unparsed_annotation == "TypeAlias":
-                re_parsed = self.source.parse_expr(self.unparse_type_expr(value))
-                self.discover_any_names(re_parsed)
-
-        # check if we need to analyze the assignment value as a list of types
-        targets_unparsed = self.unparse_assign_target(targets, simple)
-        if targets_unparsed == "__all__":
-            match value:
-                case ast.List(elts) | ast.Tuple(elts):
-                    for elt in elts:
-                        name = self.as_string_constant(elt)
-                        if name is not None:
-                            names.add(name)
-                        else:
-                            self.logger.ignore_unhandled(f"`__all__` list value {self.unparse(elt)} ({elt})")
-                case _:
-                    self.logger.ignore_unhandled(f"`__all__` value {self.unparse(value) if value else ''} ({value})")
-
     # pylint: disable-next=too-many-arguments
     def is_match(
         self,
@@ -855,32 +746,171 @@ class Stubber:
         return self.config.get_pattern(pattern).is_match(ctx)
 
 
-def _stub_content(inp: str, relative_path: Path, config: ValidatedConfig, discover_imports: bool = False) -> str:
+def _stub_content(inp: str, relative_path: Path, config: ValidatedConfig, used_names: set[str]) -> str:
     source = Source(inp, relative_path, AstConfig(feature_version=config.get_python_version()))
     ast_module = source.parse_module()
-    stubber = Stubber(source, config)
-    if discover_imports:
-        stubber.discover_module_names(ast_module)
+    stubber = Stubber(source, config, used_names)
     return stubber.output(ast_module)
 
 
 def stubgen_single_file_src(inp: str, relative_path: Path, config: ValidatedConfig) -> str:
-    # first generate the initial stub file
-    stubbed = _stub_content(inp, relative_path, config)
+    used_names: set[str] = set()
 
-    # then we re-stub the stub file, so that we can optionally analyze
-    # imports and make sure we are idempotent
-    stubbed = _stub_content(
-        stubbed,
-        relative_path,
-        config,
-        discover_imports=not config.get_pattern(config.keep_unused_imports).is_match(
-            MatchContext(
-                parent_tags={Tag.MODULE},
-                tags={Tag.IMPORT},
-                file_path=str(relative_path),
-            )
-        ),
-    )
+    # Repeatedly stub the module until the set of discovered names no longer increases.
+    # Usually this means at least two iterations.
+    stubbed: str | None = None
+    iteration_counter = 0
+    while True:
+        stubbed = _stub_content(inp, relative_path, config, used_names)
+        discovered_names = discover_used_names(stubbed, relative_path, config)
 
+        # check if we discovered any new name
+        if discovered_names - used_names:
+            used_names.update(discovered_names)
+            iteration_counter += 1
+            if iteration_counter > 10:
+                # Bail out if we looped too much. This can cause references
+                # to undefined variables, but we accept this over an endless loop.
+                break
+            continue
+        break
+
+    assert stubbed is not None
     return stubbed
+
+
+def discover_used_names(stubbed: str, relative_path: Path, config: ValidatedConfig) -> set[str]:
+    source = Source(stubbed, relative_path, AstConfig(feature_version=config.get_python_version()))
+    module = source.parse_module()
+
+    logger = Logger()
+
+    discovered_names: set[str] = set()
+
+    # discover all names not brought into scope by imports
+    for obj in module.body:
+        match obj:
+            case ast.Import() | ast.ImportFrom():
+                pass
+            case ast.Assign() | ast.AnnAssign():
+                _discover_any_names(obj, discovered_names)
+                _discover_special_assign_names(source, obj, logger, discovered_names)
+            case _:
+                _discover_any_names(obj, discovered_names)
+
+    return discovered_names
+
+
+def _discover_any_names(obj: ast.AST, out_discovered_names: set[str]):
+    for node in ast.walk(obj):
+        if isinstance(node, ast.Name):
+            out_discovered_names.add(node.id)
+
+
+def _discover_special_assign_names(
+    source: Source, obj: ast.Assign | ast.AnnAssign, logger: Logger, out_discovered_names: set[str]
+):
+    targets: list[ast.expr] | ast.Name | ast.Attribute | ast.Subscript
+    value: ast.expr | None
+    simple: int | None
+    annotation: ast.expr | None
+
+    # normalize both cases into one
+    match obj:
+        case ast.Assign(targets, value, _):
+            simple = None
+            annotation = None
+        case ast.AnnAssign(target, annotation, value, simple):
+            targets = target
+
+    # check if we need to analyze the assignment value as a type
+    if annotation is not None and value is not None:
+        unparsed_annotation = source.unparse(annotation)
+        if unparsed_annotation == "TypeAlias":
+            re_parsed = source.parse_expr(_unparse_type_expr(source, value))
+            _discover_any_names(re_parsed, out_discovered_names)
+
+    # check if we need to analyze the assignment value as a list of types
+    targets_unparsed = _unparse_assign_target(source, targets, simple)
+    if targets_unparsed == "__all__":
+        match value:
+            case ast.List(elts) | ast.Tuple(elts):
+                for elt in elts:
+                    name = _as_string_constant(elt)
+                    if name is not None:
+                        out_discovered_names.add(name)
+                    else:
+                        logger.ignore_unhandled(f"`__all__` list value {source.unparse(elt)} ({elt})")
+            case _:
+                logger.ignore_unhandled(f"`__all__` value {source.unparse(value) if value else ''} ({value})")
+
+
+# pylint: disable-next=too-many-return-statements
+def _unparse_type_expr(source: Source, expr: ast.expr) -> str:
+    """
+    Convert an expression that is used in type annotation position
+    to syntax appropriate for a typestub.
+
+    Mostly this means identify string literals and replacing them with their content.
+    """
+
+    match expr:
+        case ast.Subscript(value, slc, ast.Load()):
+            prefix = source.unparse(value)
+            if prefix == "Literal":
+                return source.unparse_original_source(expr)
+
+            if isinstance(slc, ast.Tuple):
+                args = slc.elts
+            else:
+                args = [slc]
+
+            slc_unparsed_parts: list[str] = []
+            for i, arg in enumerate(args):
+                if i > 0 and prefix == "Annotated":
+                    slc_unparsed_parts.append(source.unparse(arg))
+                else:
+                    slc_unparsed_parts.append(_unparse_type_expr(source, arg))
+
+            slc_unparsed = ", ".join(slc_unparsed_parts)
+            return f"{prefix}[{slc_unparsed}]"
+        case ast.Tuple(elts, ast.Load()):
+            return "(" + ", ".join(_unparse_type_expr(source, elt) for elt in elts) + ")"
+        case ast.List(elts, ast.Load()):
+            return "[" + ", ".join(_unparse_type_expr(source, elt) for elt in elts) + "]"
+        case ast.BinOp(left, ast.BitOr(), right):
+            return _unparse_type_expr(source, left) + " | " + _unparse_type_expr(source, right)
+        case ast.Constant(value) if isinstance(value, str):
+            # check if we can parse the string as expression,
+            # then return the unparsed expression
+            try:
+                return source.unparse(source.parse_expr(value))
+            except SyntaxError:
+                return source.unparse(expr)
+        case _:
+            # return unchanged
+            return source.unparse(expr)
+
+
+def _unparse_assign_target(
+    source: Source,
+    targets: list[ast.expr] | ast.Name | ast.Attribute | ast.Subscript,
+    simple: int | None,
+) -> str:
+    # target(s)
+    if isinstance(targets, list):
+        targets_unparsed = " = ".join([source.unparse(target) for target in targets])
+    else:
+        targets_unparsed = source.unparse(targets)
+        if simple is not None and not simple:
+            targets_unparsed = f"({targets_unparsed})"
+
+    return targets_unparsed
+
+
+def _as_string_constant(obj: ast.AST) -> str | None:
+    if isinstance(obj, ast.Expr):
+        obj = obj.value
+    if isinstance(obj, ast.Constant) and isinstance(obj.value, str):
+        return obj.value
+    return None

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from dubstub.config import Config
-from dubstub.generate.stubber import Stubber, stubgen_single_file_src
+from dubstub.generate.stubber import Stubber, discover_used_names, stubgen_single_file_src
 from dubstub.source import AstConfig, Source
 
 from .. import TESTDATA
@@ -84,12 +84,8 @@ l = some3
 
 
 def test_discover_names():
-    source = Source(DISCOVER_NAMES, Path("file.py"), AstConfig())
-    ast_module = source.parse_module()
-
-    s = Stubber(source, TEST_CONFIG)
-    s.discover_module_names(ast_module)
-    assert s.used_names == {
+    used_names = discover_used_names(DISCOVER_NAMES, Path("file.py"), Config().validate())
+    assert used_names == {
         "f",
         "g",
         "h",

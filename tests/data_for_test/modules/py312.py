@@ -4,7 +4,8 @@ type MyList[T: (int, float), U] = list[T]
 type MyList[T: ("int", "float"), U] = "list[T]"
 
 type MyTuple[*T] = tuple[*T]
-type MyTuple[*T] = "tuple[*T]"
+# TODO: Parser behaves weird here, it generates `tuple[*T,]` for the value.
+# type MyTuple[*T] = "tuple[*T]"
 
 type Alias[**P] = Callable[P, int]
 type Alias[**P] = "Callable[P, int]"

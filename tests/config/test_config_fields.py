@@ -85,6 +85,10 @@ def config_helper(config: Config, inp: str, expected: str, filename: str | list[
                 _x: TypeAlias = T
                 _x: TypeAlias = TypeVar('_x')
 
+                _A: TypeAlias = int
+                _B: TypeAlias = list[_A]
+                C: TypeAlias = list[_B]
+
                 class foo:
                     ...
                 class _foo:
@@ -117,6 +121,10 @@ def config_helper(config: Config, inp: str, expected: str, filename: str | list[
                     ...
                 __special__ = ...
 
+                _A: TypeAlias = int
+                _B: TypeAlias = list[_A]
+                C: TypeAlias = list[_B]
+
                 class foo:
                     ...
             """,
@@ -145,6 +153,10 @@ def config_helper(config: Config, inp: str, expected: str, filename: str | list[
                 _x: TypeAlias = T
                 _x: TypeAlias = TypeVar('_x')
 
+                _A: TypeAlias = int
+                _B: TypeAlias = list[_A]
+                C: TypeAlias = list[_B]
+
                 class foo:
                     ...
             """,
@@ -160,6 +172,10 @@ def config_helper(config: Config, inp: str, expected: str, filename: str | list[
                 def _():
                     ...
                 __special__ = ...
+
+                _A: TypeAlias = int
+                _B: TypeAlias = list[_A]
+                C: TypeAlias = list[_B]
 
                 class foo:
                     ...
@@ -184,6 +200,10 @@ def config_helper(config: Config, inp: str, expected: str, filename: str | list[
                 _x: TypeAlias
                 _x: TypeAlias = T
                 _x: TypeAlias = TypeVar('_x')
+
+                _A: TypeAlias = int
+                _B: TypeAlias = list[_A]
+                C: TypeAlias = list[_B]
 
                 class foo:
                     ...
@@ -214,6 +234,10 @@ def test_config_keep_definitions(config: Config, expected: str):
             _x: TypeAlias
             _x: TypeAlias = T
             _x: TypeAlias = TypeVar('_x')
+
+            _A: TypeAlias = int
+            _B: TypeAlias = list[_A]
+            C: TypeAlias = list[_B]
 
             class foo:
                 pass
@@ -1069,6 +1093,7 @@ def test_config_profile(config: Config, expected: str):
 )
 def test_config_format(config: Config, expected: str):
     config.keep_definitions = True
+    config.keep_unused_imports = True
     config_helper(
         config,
         """
