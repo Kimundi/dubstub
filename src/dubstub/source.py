@@ -36,10 +36,10 @@ class Source:
 
         assert offset == len(self.src)
 
-    def parse_module(self) -> ast.Module:
+    def parse_module(self, source: str | None = None, filename: str | None = None) -> ast.Module:
         module: ast.Module = ast.parse(
-            self.src_decoded,
-            self.filename,
+            source or self.src_decoded,
+            filename or self.filename,
             feature_version=self.config.feature_version,
             type_comments=self.config.type_comments,
         )

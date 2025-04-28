@@ -1210,7 +1210,10 @@ def test_config_python_version(config: Config, expected: tuple[int, int]):
     ("config", "expected"),
     [
         pytest.param(
-            Config(add_class_attributes_from_init=True),
+            Config(
+                add_class_attributes_from_init=True,
+                keep_definitions=True,
+            ),
             """
             class Foo:
                 bar: int
@@ -1222,8 +1225,35 @@ def test_config_python_version(config: Config, expected: tuple[int, int]):
                 foo: str
                 def __init__(self) -> None:
                     ...
+
+            class Priv:
+                _foo: str
+                def __init__(self) -> None:
+                    ...
             """,
             id="yes",
+        ),
+        pytest.param(
+            Config(
+                add_class_attributes_from_init=True,
+            ),
+            """
+            class Foo:
+                bar: int
+                def __init__(self) -> None:
+                    ...
+
+            class Bar:
+                bar: str
+                foo: str
+                def __init__(self) -> None:
+                    ...
+
+            class Priv:
+                def __init__(self) -> None:
+                    ...
+            """,
+            id="default",
         ),
         pytest.param(
             Config(add_class_attributes_from_init=False),
@@ -1234,6 +1264,10 @@ def test_config_python_version(config: Config, expected: tuple[int, int]):
 
             class Bar:
                 bar: str
+                def __init__(self) -> None:
+                    ...
+
+            class Priv:
                 def __init__(self) -> None:
                     ...
             """,
@@ -1255,6 +1289,11 @@ def test_config_add_class_attributes_from_init(config: Config, expected: str):
             def __init__(self):
                 self.foo: str = ""
                 self.bar: int = 2
+
+        class Priv:
+            def __init__(self):
+                self._foo: str = ""
+
         """,
         expected,
     )

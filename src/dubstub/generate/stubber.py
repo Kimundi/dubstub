@@ -253,35 +253,20 @@ class Stubber:
         parent.children.insert(insert_pos, this)
 
     # pylint: disable-next=too-many-locals
-    def stub_assign(self, parent: Node, obj: ast.Assign | ast.AnnAssign):
-        targets: list[ast.expr] | ast.Name | ast.Attribute | ast.Subscript
-        value: ast.expr | None
-        type_comment: str | None
-        annotation: ast.expr | None
-        simple: int | None
-        tags = {Tag.VARIABLE}
+    def stub_assign_(self, parent: Node, obj: ast.Assign | ast.AnnAssign) -> Node | None:
+        normalized = _normalize_assign(obj)
+        if normalized is None:
+            return None
+        target_name, annotation, value, type_comment = normalized
 
-        # normalize both cases into one
-        match obj:
-            case ast.Assign(targets, value, type_comment):
-                annotation = None
-                simple = None
-            case ast.AnnAssign(target, annotation, value, simple):
-                targets = target
-                type_comment = None
+        tags = {Tag.VARIABLE}
 
         if type_comment:
             self.logger.ignore_unhandled("Type comment on variable")
 
-        targets_unparsed = self.unparse_assign_target(targets, simple)
-        if "." in targets_unparsed:
-            # If we have an assignment of the form `x.y = ...`, then we interpret this
-            # as a modification, not a definition, and
-            # do not output this
-            return
-
         # determine name of this variable.
-        name = targets_unparsed.split("=")[0].strip()
+        target_unparsed = self.unparse(target_name)
+        name = target_name.id
 
         # node for this assignment
         this = Node(tags=tags)
@@ -318,7 +303,7 @@ class Stubber:
             self.logger.ignore_disabled(f"Pruning value of variable {name}")
             value_fragment = " = ..."
 
-        line = targets_unparsed + annotation_fragment + value_fragment
+        line = target_unparsed + annotation_fragment + value_fragment
         this.add_line(line)
 
         keep_definitions = self.is_match(
@@ -331,9 +316,14 @@ class Stubber:
         )
         if not keep_definitions and name not in self.used_names:
             self.logger.ignore_disabled(f"Pruning variable {name}")
-            return
+            return None
 
-        parent.children.append(this)
+        return this
+
+    def stub_assign(self, parent: Node, obj: ast.Assign | ast.AnnAssign):
+        this = self.stub_assign_(parent, obj)
+        if this is not None:
+            parent.children.append(this)
 
     # pylint: disable-next=too-many-locals
     def stub_class(self, parent: Node, obj: ast.ClassDef):
@@ -565,7 +555,6 @@ class Stubber:
                 continue
 
             attr = body_stmt.target.attr
-            annot = self.unparse_type_expr(body_stmt.annotation)
 
             insert_pos = 0
             already_inserted = False
@@ -578,10 +567,13 @@ class Stubber:
                     insert_pos = parent_child_idx + 1
 
             if not already_inserted:
-                child_node = Node(tags={Tag.VARIABLE, Tag.ANNOTATED})
-                child_node.add_line(f"{attr}: {annot}")
-                child_node.meta["name"] = str(attr)
-                parent.children.insert(insert_pos, child_node)
+                tmp_module = self.source.parse_module(source=f"{attr}: {self.unparse(body_stmt.annotation)}")
+                tmp_stmt = tmp_module.body[0]
+                assert isinstance(tmp_stmt, ast.AnnAssign)
+
+                child_node = self.stub_assign_(parent, tmp_stmt)
+                if child_node is not None:
+                    parent.children.insert(insert_pos, child_node)
 
     def log_stub_ignore(self, obj: ast.AST):
         self.logger.ignore_intentional(f"{type(obj).__name__} statement")
@@ -599,13 +591,6 @@ class Stubber:
         """
 
         return _unparse_type_expr(self.source, expr)
-
-    def unparse_assign_target(
-        self,
-        targets: list[ast.expr] | ast.Name | ast.Attribute | ast.Subscript,
-        simple: int | None,
-    ) -> str:
-        return _unparse_assign_target(self.source, targets, simple)
 
     def unparse_arg(self, arg: ast.arg, val: None | ast.expr, keep_val: bool = False) -> str:
         if arg.type_comment:
@@ -810,18 +795,10 @@ def _discover_any_names(obj: ast.AST, out_discovered_names: set[str]):
 def _discover_special_assign_names(
     source: Source, obj: ast.Assign | ast.AnnAssign, logger: Logger, out_discovered_names: set[str]
 ):
-    targets: list[ast.expr] | ast.Name | ast.Attribute | ast.Subscript
-    value: ast.expr | None
-    simple: int | None
-    annotation: ast.expr | None
-
-    # normalize both cases into one
-    match obj:
-        case ast.Assign(targets, value, _):
-            simple = None
-            annotation = None
-        case ast.AnnAssign(target, annotation, value, simple):
-            targets = target
+    normalized = _normalize_assign(obj)
+    if normalized is None:
+        return
+    target_name, annotation, value, _ = normalized
 
     # check if we need to analyze the assignment value as a type
     if annotation is not None and value is not None:
@@ -831,8 +808,7 @@ def _discover_special_assign_names(
             _discover_any_names(re_parsed, out_discovered_names)
 
     # check if we need to analyze the assignment value as a list of types
-    targets_unparsed = _unparse_assign_target(source, targets, simple)
-    if targets_unparsed == "__all__":
+    if target_name.id == "__all__":
         match value:
             case ast.List(elts) | ast.Tuple(elts):
                 for elt in elts:
@@ -892,25 +868,36 @@ def _unparse_type_expr(source: Source, expr: ast.expr) -> str:
             return source.unparse(expr)
 
 
-def _unparse_assign_target(
-    source: Source,
-    targets: list[ast.expr] | ast.Name | ast.Attribute | ast.Subscript,
-    simple: int | None,
-) -> str:
-    # target(s)
-    if isinstance(targets, list):
-        targets_unparsed = " = ".join([source.unparse(target) for target in targets])
-    else:
-        targets_unparsed = source.unparse(targets)
-        if simple is not None and not simple:
-            targets_unparsed = f"({targets_unparsed})"
-
-    return targets_unparsed
-
-
 def _as_string_constant(obj: ast.AST) -> str | None:
     if isinstance(obj, ast.Expr):
         obj = obj.value
     if isinstance(obj, ast.Constant) and isinstance(obj.value, str):
         return obj.value
     return None
+
+
+def _normalize_assign(
+    obj: ast.Assign | ast.AnnAssign,
+) -> tuple[ast.Name, ast.expr | None, ast.expr | None, str | None] | None:
+    target_name: ast.Name
+    annotation: ast.expr | None
+    value: ast.expr | None
+    type_comment: str | None
+
+    # normalize both cases into one
+    match obj:
+        case ast.Assign(targets, value, type_comment):
+            if len(targets) != 1:
+                return None
+            if not isinstance(targets[0], ast.Name):
+                return None
+            target_name = targets[0]
+            annotation = None
+        case ast.AnnAssign(target, annotation, value, _):
+            if not isinstance(target, ast.Name):
+                return None
+
+            target_name = target
+            type_comment = None
+
+    return target_name, annotation, value, type_comment
