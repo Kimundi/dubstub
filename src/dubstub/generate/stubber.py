@@ -573,6 +573,8 @@ class Stubber:
                     insert_pos = parent_child_idx + 1
                     if parent_child.meta["name"] == attr:
                         already_inserted = True
+                elif Tag.DOCSTRING in parent_child.tags:
+                    insert_pos = parent_child_idx + 1
 
             if not already_inserted:
                 child_node = Node(tags={Tag.VARIABLE, Tag.ANNOTATED})

@@ -1,3 +1,7 @@
+# 1.3.1
+
+- Fix class attributes being inserted before doc strings
+
 # 1.3
 
 - Add: Added class attribute extraction from `__init__()` methods.
