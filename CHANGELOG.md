@@ -1,3 +1,7 @@
+# 1.4
+
+- Rewrite heuristic for discovering (un)used names in a module to handle more than just imports
+
 # 1.3.1
 
 - Fix class attributes being inserted before doc strings
